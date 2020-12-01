@@ -105,7 +105,7 @@ module "orm_elb" {
 
 }
 
-module "backend_asg" {
+module "orm_asg" {
   source = "terraform-aws-modules/autoscaling/aws"
 
   name = "ORM-asg"
