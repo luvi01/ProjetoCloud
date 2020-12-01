@@ -6,15 +6,12 @@ data "aws_subnet_ids" "all" {
   vpc_id = data.aws_vpc.default.id
 }
 
-
-
 module "orm_sg" {
   source = "terraform-aws-modules/security-group/aws"
 
 
   name        = "Security ORM"
-  description = "Security group for database"
-  //vpc_id      = "vpc-bcbf0fc6"
+  description = "Security group for ORM"
   vpc_id      = data.aws_vpc.default.id
 
   ingress_with_cidr_blocks = [
@@ -59,27 +56,86 @@ module "orm_sg" {
   ]
 }
 
-module "orm_instance" {
-  source  = "terraform-aws-modules/ec2-instance/aws"
-
-  version = "2.12.0"
-  name           = "ORM"
-  instance_count = 1
-  key_name       = "luvi2"
-  ami                    = "ami-0a91cd140a1fc148a"
-  instance_type          = "t2.micro"
-  subnet_ids              = data.aws_subnet_ids.all.ids
-  vpc_security_group_ids      = [module.orm_sg.this_security_group_id]
-
-  tags = {
-    Terraform   = "true"
-    Environment = "dev"
-  }
-
+resource "aws_launch_configuration" "orm_config" {
+  name_prefix   = "orm-config"
+  image_id      = "ami-0a91cd140a1fc148a"
+  instance_type = "t2.micro"
   user_data = templatefile("${path.module}/install.sh", {dbName = var.dbName,
                                                          dbUser = var.dbUser,
                                                          dbPass = var.dbPass,
-                                                         dbHost = substr(var.dbHost, 0, -5),
+                                                         dbHost = var.dbHost,
                                                          dbPort = var.dbPort})
+  
+  security_groups  = [module.orm_sg.this_security_group_id]
+  key_name = var.keyName
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+module "orm_elb" {
+  source = "terraform-aws-modules/elb/aws"
+
+  depends_on = [module.orm_sg]
+  name = "orm-elb"
+
+  subnets         = data.aws_subnet_ids.all.ids
+  security_groups = [module.orm_sg.this_security_group_id]
+  internal        = false
+
+
+  listener = [
+    {
+      instance_port     = "8080"
+      instance_protocol = "tcp"
+      lb_port           = "8080"
+      lb_protocol       = "tcp"
+    },
+  ]
+
+
+  health_check = {
+    target              = "TCP:8080"
+    interval            = 30
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 20
+  }
 
 }
+
+module "backend_asg" {
+  source = "terraform-aws-modules/autoscaling/aws"
+
+  name = "ORM-asg"
+ 
+  launch_configuration = aws_launch_configuration.orm_config.name
+  create_lc = false 
+  recreate_asg_when_lc_changes = true
+
+  security_groups = [module.orm_sg.this_security_group_id]
+  load_balancers  = [module.orm_elb.this_elb_id]
+
+  asg_name                  = "orm-asg"
+  vpc_zone_identifier       = data.aws_subnet_ids.all.ids
+  health_check_type         = "EC2"
+  min_size                  = 2
+  max_size                  = 5
+  desired_capacity          = 2
+  wait_for_capacity_timeout = 0
+
+}
+
+resource "null_resource" "client" {
+  provisioner "local-exec" {
+    command = <<EOT
+    cd ..
+    cd client
+    sed -i '' "s/.*#url.*/url = '${module.orm_elb.this_elb_dns_name}:8080' #url/g" client.py
+    EOT
+  }
+
+}
+
+  

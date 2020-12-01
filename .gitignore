@@ -1,0 +1,10 @@
+#Terraform
+**.terraform**
+**terraform.tfstate**
+**terraform.tfstate.backup**
+**terraform.tfvars**
+**terraform.auto.tfvars**
+
+#VS code
+**.vscode**
+**.DS_Store**

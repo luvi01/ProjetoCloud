@@ -17,3 +17,7 @@ variable "dbHost" {
 variable "dbPort" {
   type = number
 }
+
+variable "keyName" {
+  type = string
+}

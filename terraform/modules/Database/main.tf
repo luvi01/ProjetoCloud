@@ -11,7 +11,6 @@ module "db_sg" {
 
   name        = "Security DB"
   description = "Security group for database"
-  //vpc_id      = "vpc-aa57bfc1"
   vpc_id      = data.aws_vpc.default.id
 
 
@@ -45,7 +44,6 @@ module "db_rds" {
   allocated_storage = 5
   storage_encrypted = false
 
-  # kms_key_id        = "arm:aws:kms:<region>:<account id>:key/<kms key id>"
   name = "demodb"
 
   # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
