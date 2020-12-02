@@ -74,34 +74,41 @@ resource "aws_launch_configuration" "orm_config" {
   }
 }
 
-module "orm_elb" {
-  source = "terraform-aws-modules/elb/aws"
+module "orm_alb" {
+  source  = "terraform-aws-modules/alb/aws"
+  version = "~> 5.0"
+  
+  name = "orm-alb"
 
-  depends_on = [module.orm_sg]
-  name = "orm-elb"
+  load_balancer_type = "application"
 
+  vpc_id          = data.aws_vpc.default.id
   subnets         = data.aws_subnet_ids.all.ids
   security_groups = [module.orm_sg.this_security_group_id]
-  internal        = false
 
-
-  listener = [
+  target_groups = [
     {
-      instance_port     = "8080"
-      instance_protocol = "tcp"
-      lb_port           = "8080"
-      lb_protocol       = "tcp"
-    },
+      name_prefix      = "task-"
+      backend_protocol = "HTTP"
+      backend_port     = 8080
+      target_type      = "instance"
+      health_check = {
+        path           = "/status"
+        port           = 8080
+        protocol       = "HTTP"
+        matcher        = "200"
+      }
+
+    }
   ]
 
-
-  health_check = {
-    target              = "TCP:8080"
-    interval            = 30
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 20
-  }
+  http_tcp_listeners = [
+    {
+      port               = 8080
+      protocol           = "HTTP"
+      target_group_index = 0
+    }
+  ]
 
 }
 
@@ -115,16 +122,34 @@ module "orm_asg" {
   recreate_asg_when_lc_changes = true
 
   security_groups = [module.orm_sg.this_security_group_id]
-  load_balancers  = [module.orm_elb.this_elb_id]
+  target_group_arns = module.orm_alb.target_group_arns
 
   asg_name                  = "orm-asg"
   vpc_zone_identifier       = data.aws_subnet_ids.all.ids
   health_check_type         = "EC2"
-  min_size                  = 2
+  min_size                  = 1
   max_size                  = 5
   desired_capacity          = 2
   wait_for_capacity_timeout = 0
 
+}
+
+resource "aws_autoscaling_policy" "orm_asg_policy" {
+  depends_on = [module.orm_asg]
+  name                   = "orm-asg-policy"
+  adjustment_type        = "ChangeInCapacity"
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label = "${module.orm_alb.this_lb_arn_suffix}/${module.orm_alb.target_group_arn_suffixes[0]}"
+    }
+
+    target_value = 3000
+  }
+
+  autoscaling_group_name = module.orm_asg.this_autoscaling_group_name
 }
 
 resource "null_resource" "client" {
@@ -132,7 +157,7 @@ resource "null_resource" "client" {
     command = <<EOT
     cd ..
     cd client
-    sed -i '' "s/.*#url.*/url = '${module.orm_elb.this_elb_dns_name}:8080' #url/g" client.py
+    sed -i '' "s/.*#url.*/url = '${module.orm_alb.this_lb_dns_name}:8080' #url/g" client.py
     EOT
   }
 

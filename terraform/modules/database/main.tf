@@ -46,9 +46,6 @@ module "db_rds" {
 
   name = "demodb"
 
-  # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
-  # "Error creating DB Instance: InvalidParameterValue: MasterUsername
-  # user cannot be used as it is a reserved word used by the engine"
   username = "demouser"
 
   password = "YourPwdShouldBeLongAndSecure!"
@@ -59,7 +56,6 @@ module "db_rds" {
   maintenance_window = "Mon:00:00-Mon:03:00"
   backup_window      = "03:00-06:00"
 
-  # disable backups to create DB faster
   backup_retention_period = 0
 
   tags = {
@@ -69,19 +65,14 @@ module "db_rds" {
 
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
-  # DB subnet group
   subnet_ids = data.aws_subnet_ids.all.ids
 
-  # DB parameter group
   family = "postgres9.6"
 
-  # DB option group
   major_engine_version = "9.6"
 
-  # Snapshot name upon DB deletion
   final_snapshot_identifier = "demodb"
 
-  # Database Deletion Protection
   deletion_protection = false
 
   publicly_accessible = true

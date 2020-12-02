@@ -4,7 +4,7 @@ import json
 import datetime
 
 
-url = 'orm-elb-748078111.us-east-2.elb.amazonaws.com:8080' #url
+url = 'orm-alb-1278172864.us-east-2.elb.amazonaws.com:8080' #url
 
 url = 'http://'+url
 
